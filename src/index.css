@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    scroll-behavior: smooth;
+  }
+  
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom scrollbars for clean command center feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(225, 29, 72, 0.35);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(225, 29, 72, 0.6);
+}
+
+/* Spider-Man animations */
+@keyframes spiderSwing {
+  0%, 100% {
+    transform: rotate(-3deg) translateY(0px);
+  }
+  50% {
+    transform: rotate(3deg) translateY(3px);
+  }
+}
+
+@keyframes spiderWebPulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scaleY(1.04);
+  }
+}
+
+@keyframes pulseGlowRed {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(225, 29, 72, 0);
+  }
+}
+
+@keyframes flowParticle {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-spider-swing {
+  animation: spiderSwing 4s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.animate-web-pulse {
+  animation: spiderWebPulse 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlowRed 2s infinite;
+}
+
+.animate-flow-dash {
+  stroke-dasharray: 6 6;
+  animation: flowParticle 1.2s linear infinite;
+}
+
+/* Flowing Neon Grey / Mild Grey Perimeter & Surface Motion Animations */
+@keyframes neonBorderRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes neonRectSheen {
+  0% {
+    transform: translate(-60%, -60%) rotate(35deg);
+  }
+  50% {
+    transform: translate(10%, 10%) rotate(35deg);
+  }
+  100% {
+    transform: translate(80%, 80%) rotate(35deg);
+  }
+}
+
+@keyframes mildGreyPulseGlow {
+  0%, 100% {
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(148, 163, 184, 0.25);
+  }
+  50% {
+    box-shadow: 0 6px 28px -2px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(203, 213, 225, 0.45), 0 0 12px rgba(148, 163, 184, 0.12);
+  }
+}
+
+.animate-neon-border-rotate {
+  animation: neonBorderRotate 7s linear infinite;
+}
+
+.animate-neon-sheen-slow {
+  animation: neonRectSheen 9s ease-in-out infinite;
+}
+
+.animate-neon-card-glow {
+  animation: mildGreyPulseGlow 5s ease-in-out infinite;
+}
+
+/* Dark Mode Theme Overrides: Pure Black, Crisp White, Crimson Red & Defined Containers */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: #050508;
+  color: #ffffff;
+}
+
+/* Ensure smooth, elevated card styling with visible separation in dark theme */
+.dark .bg-white {
+  background-color: #0e1017 !important;
+  color: #ffffff;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-100 {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background-color: #141622 !important;
+}
+
+.dark .bg-slate-50\/70 {
+  background-color: rgba(20, 22, 34, 0.85) !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: #ffffff !important;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600 {
+  color: #e2e8f0 !important;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.dark .shadow-sm,
+.dark .shadow-xs,
+.dark .shadow-2xs {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}

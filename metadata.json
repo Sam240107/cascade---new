@@ -1,0 +1,8 @@
+{
+  "name": "Remix CASCADE",
+  "description": "Counterfactual Infrastructure Cascade Analysis \u0026 Decision Engine",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
