@@ -285,6 +285,92 @@ export interface BenchmarkResult {
   };
 }
 
+/**
+ * ---------------------------------------------------------------------------
+ * Ground-truth simulation types (propagationEngine.ts)
+ * ---------------------------------------------------------------------------
+ * These describe the real, mutable state of the network *while a cascade is
+ * being simulated* — as opposed to InfrastructureNode/TrueEnvironment, which
+ * only describe the scenario's static, predefined starting conditions.
+ * The propagation engine builds a SimEnvironment from a Scenario, then
+ * mutates a clone of it as failures and load transfers occur.
+ */
+
+/** Why a given node ended up in the failedNodes list. */
+export type FailureCause =
+  | 'initial_event'      // the node named by the scenario's initiating event
+  | 'overload_cascade'   // failed because redistributed load pushed it over its threshold
+  | 'service_loss';      // stranded because its only network tie ran through an isolated node
+
+export interface SimNode {
+  id: string;
+  name: string;
+  type: InfrastructureNodeType;
+  capacity: number;
+  currentLoad: number;
+  redundancyFactor: number;
+  populationWeight: number;
+  critical: boolean;
+  failureThreshold: number;      // absolute load at which the node fails (capacity * ratio)
+  timeToFailureMinutes: number;  // ground-truth estimate, independent of sensor noise
+  failed: boolean;
+  isolated: boolean;
+}
+
+export interface SimEdge {
+  source: string;
+  target: string;
+  loadTransferRatio: number;
+  secondaryEffectMultiplier: number;
+  active: boolean;
+}
+
+export interface SimEnvironment {
+  nodes: Record<string, SimNode>;
+  edges: SimEdge[];
+  seed: number;
+}
+
+export interface PropagationStep {
+  step: number;
+  nodeId: string;
+  nodeName: string;
+  eventType: 'initial_failure' | 'overload_failure' | 'load_transfer' | 'isolation';
+  cause?: FailureCause;
+  loadBefore: number;
+  loadAfter: number;
+  stressBefore: number;
+  stressAfter: number;
+  description: string;
+}
+
+export interface PropagationResult {
+  failedNodes: string[];
+  failureCauses: Record<string, FailureCause>;
+  propagationSteps: PropagationStep[];
+  finalNodeStates: Record<string, { load: number; stress: number; failed: boolean; isolated: boolean }>;
+  affectedNodeCount: number;
+  affectedPopulation: number;
+  affectedCriticalFacilities: number;
+  cascadeContained: boolean;   // true iff no node failed via 'overload_cascade'
+  maximumStress: number;
+  cascadeDepth: number;
+  totalUnmetLoad: number;      // load that could not be routed anywhere during the run
+}
+
+export interface DisruptionWeights {
+  populationWeightPerPerson: number;
+  downtimeWeightPerHour: number;
+  criticalFacilityPenalty: number;
+}
+
+export interface DisruptionBreakdown {
+  populationComponent: number;
+  downtimeComponent: number;
+  criticalFacilityComponent: number;
+  totalDisruptionScore: number;
+}
+
 export interface EngineSettings {
   weights: RiskScoreWeights;
   stressThresholds: {

@@ -50,16 +50,6 @@ export const SidebarSpiderIllustration: React.FC = () => {
         </svg>
       </div>
 
-      {/* Static High-Resolution Spider-Man Image */}
-      <div className="relative z-10 w-full flex-1 flex items-center justify-center py-2 px-1">
-        <img
-          src="/spiderman_web_swing.png"
-          alt="Spider-Man swinging"
-          className="w-full max-h-[175px] object-contain drop-shadow-md select-none pointer-events-none"
-          loading="eager"
-        />
-      </div>
-
       {/* Scenario Identifier Pill at Bottom */}
       <div
         className={`relative z-10 mt-auto w-full pt-2 border-t flex items-center gap-2 transition-colors ${

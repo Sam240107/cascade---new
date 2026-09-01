@@ -1,69 +1,106 @@
-import { Recommendation, Scenario, VerificationResult, SimulationResult } from '../types/domain';
-import { DeterministicPRNG } from './prng';
+/**
+ * verificationEngine.ts
+ * ---------------------------------------------------------------------------
+ * Second-shock verification: takes the exact sandbox environment produced by
+ * the recommended intervention, hits it with a fresh, independently-seeded
+ * event (unrelated to the original cascade trigger), and runs it through the
+ * real propagation engine to see whether the repaired network holds.
+ *
+ * PASS is only returned when the propagation engine reports zero new
+ * failures across the qualifying share of independent trials — never a
+ * hardcoded verdict.
+ */
+
+import { Recommendation, Scenario, VerificationResult, SimulationResult, Observation } from '../types/domain';
+import { InterventionEngine } from './interventionEngine';
+import { generateIndependentShock, applyIndependentShock } from './secondShockGenerator';
 
 export class VerificationEngine {
   /**
-   * Runs verification by applying the chosen recommendation to a sandbox state
-   * and injecting an independent stochastic perturbation with a dedicated seed.
+   * `testRunsCount` keeps its original 4th-argument position (and default of
+   * 10) for compatibility with existing callers. `observation` is optional
+   * and trailing: when supplied, the post-fix sandbox environment is rebuilt
+   * exactly as the recommended action produced it against the live sensor
+   * observation; when omitted, it is rebuilt directly from the scenario's
+   * ground truth (the action's own targetNodeId is trusted, since it always
+   * originates from a real scenario node).
    */
   static runVerification(
     recommendation: Recommendation,
     simulationResult: SimulationResult,
     scenario: Scenario,
-    testRunsCount: number = 10
+    testRunsCount: number = 10,
+    observation?: Observation
   ): VerificationResult {
-    // Separate independent verification seed stream
-    const verificationSeed = (scenario.seed * 31337) ^ 0xcafe1234;
-    const rng = new DeterministicPRNG(verificationSeed);
+    const candidateActions = InterventionEngine.getCandidateActions(scenario);
+    const chosenAction =
+      candidateActions.find((a) => a.id === recommendation.actionId) ??
+      candidateActions.find((a) => a.id === simulationResult.actionId) ??
+      candidateActions[0];
 
-    const candidateTarget = scenario.nodes.find((n) => n.id === 'C') ?? scenario.nodes[1];
-    const perturbationMagnitude = Math.round((8 + rng.next() * 7) * 10) / 10; // e.g. 12.4 MW
+    // Rebuild the exact post-fix sandbox state the recommended action produced.
+    const { environment: postFixEnvironment } = InterventionEngine.simulateActionWithEnvironment(
+      chosenAction,
+      scenario,
+      observation
+    );
+
+    // Independent verification seed stream — deliberately decoupled from the
+    // scenario's own seed and the sensor seed, per trial.
+    const baseSeed = (scenario.seed * 31337) ^ 0xcafe1234;
 
     let passedTests = 0;
+    let primaryShock: ReturnType<typeof generateIndependentShock> = null;
+    let primaryContained = false;
+    let primaryAffected = { nodes: 0, population: 0, critical: 0 };
+    let trialsRun = 0;
 
     for (let i = 0; i < testRunsCount; i++) {
-      const trialRng = rng.fork(i);
-      const secondarySpike = trialRng.nextGaussian(perturbationMagnitude, 1.2);
+      const trialSeed = (baseSeed ^ ((i + 1) * 0x9e3779b9)) >>> 0;
+      const shock = generateIndependentShock(postFixEnvironment, trialSeed);
+      if (!shock) continue; // nothing left standing to shock
 
-      // Verify if the spare capacity after reroute absorbs the shock
-      // After reroute, Node C stress is 74%, capacity is 90MW (23.4MW buffer)
-      // If secondarySpike < buffer, it passes
-      if (simulationResult.actionType === 'reroute' && secondarySpike < 21.0) {
-        passedTests++;
-      } else if (simulationResult.actionType === 'isolate' && secondarySpike < 18.0) {
-        passedTests++;
-      } else if (simulationResult.actionType === 'crew') {
-        // Crew usually fails verification under secondary shock
-        if (trialRng.next() < 0.15) passedTests++;
-      } else {
-        if (trialRng.next() < 0.85) passedTests++;
+      trialsRun++;
+      const result = applyIndependentShock(postFixEnvironment, shock);
+      const shockContained = result.failedNodes.length === 0;
+      if (shockContained) passedTests++;
+
+      if (i === 0) {
+        primaryShock = shock;
+        primaryContained = shockContained;
+        primaryAffected = {
+          nodes: result.affectedNodeCount,
+          population: result.affectedPopulation,
+          critical: result.affectedCriticalFacilities,
+        };
       }
     }
 
-    const isPassed = passedTests >= Math.floor(testRunsCount * 0.8);
-    const reCascadeCount = testRunsCount - passedTests;
-    const reCascadePercentage = Math.round((reCascadeCount / testRunsCount) * 100);
+    const testsConducted = trialsRun;
+    const isPassed = testsConducted > 0 && passedTests >= Math.ceil(testsConducted * 0.8);
+    const reCascadeCount = testsConducted - passedTests;
+    const reCascadePercentage = testsConducted > 0 ? Math.round((reCascadeCount / testsConducted) * 100) : 100;
 
     return {
       status: isPassed ? 'PASSED' : 'FAILED',
       independentPerturbation: {
-        eventType: 'Independent Secondary Feeder Thermal Shock',
-        targetNodeId: candidateTarget.id,
-        targetNodeName: candidateTarget.name,
-        magnitude: perturbationMagnitude,
-        seed: verificationSeed,
+        eventType: 'Independent Secondary Stress Event',
+        targetNodeId: primaryShock?.targetNodeId ?? 'N/A',
+        targetNodeName: primaryShock?.targetNodeName ?? 'N/A',
+        magnitude: primaryShock?.magnitude ?? 0,
+        seed: primaryShock?.seed ?? baseSeed,
       },
-      postFixContainment: isPassed ? 'contained' : 'not contained',
-      reCascadeRate: `${reCascadeCount} / ${testRunsCount} (${reCascadePercentage}%)`,
+      postFixContainment: primaryContained ? 'contained' : 'not contained',
+      reCascadeRate: `${reCascadeCount} / ${testsConducted} (${reCascadePercentage}%)`,
       reCascadePercentage,
-      testsConducted: testRunsCount,
+      testsConducted,
       testsPassed: passedTests,
-      affectedNodesCount: simulationResult.affectedNodeCount,
-      populationImpact: simulationResult.populationImpact,
-      criticalFacilities: simulationResult.criticalFacilitiesImpact,
+      affectedNodesCount: primaryAffected.nodes,
+      populationImpact: primaryAffected.population,
+      criticalFacilities: primaryAffected.critical,
       details: isPassed
-        ? 'Post-fix stress test contained the cascade under independent secondary disturbance.'
-        : 'Warning: Secondary disturbance breached thermal buffer headroom.',
+        ? 'The repaired network absorbed an independent secondary stress event without any new node exceeding its failure threshold.'
+        : 'Warning: an independent secondary stress event still produced new failures after the recommended fix.',
       timestamp: new Date().toLocaleTimeString(),
     };
   }

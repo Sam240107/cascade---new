@@ -174,7 +174,7 @@ export const Sidebar: React.FC = () => {
         </nav>
       </div>
 
-      {/* Spider-Man Artwork at bottom of sidebar */}
+      {/* Scenario footer/status area at bottom of sidebar */}
       {!isSidebarCollapsed && <SidebarSpiderIllustration />}
     </aside>
   );
