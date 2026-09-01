@@ -225,6 +225,12 @@ export const chennaiHospitalCase: CaseStudy = {
     classification: 'MODELLED',
   },
   availableInterventions: ['reroute', 'isolate', 'crew'],
+  // Phase 2: the domain's full 5-action set (see domainActions.ts). Of
+  // these, transfer-critical-load, backup-generation, and
+  // restore-primary-supply are SUPPORTED_BY_CURRENT_ENGINE (mapped to the
+  // existing reroute/isolate/crew mechanisms respectively);
+  // activate-alternate-feed and shed-noncritical-load are REQUIRES_DOMAIN_SOLVER.
+  domainActionIds: ['transfer-critical-load', 'activate-alternate-feed', 'backup-generation', 'shed-noncritical-load', 'restore-primary-supply'],
   counterfactualQuestions: [
     'If load from the failed main feed is proactively rerouted in a balanced way across both backup generator paths, does the general-ward outage get contained?',
     'Does isolating the faulted main cable prevent the cascade from reaching the general-ward load, and at what cost?',

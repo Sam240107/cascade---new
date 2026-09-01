@@ -20,6 +20,12 @@ import { RecommendationEngine } from '../simulation/recommendationEngine';
 import { VerificationEngine } from '../simulation/verificationEngine';
 import { ImpactCalculator } from '../simulation/impactCalculator';
 import { BenchmarkEngine } from '../simulation/benchmarkEngine';
+import { calculateDisruptionScore } from '../simulation/disruptionCalculator';
+import { HOURS_TO_RESTORE_FAILED_NODE } from '../simulation/modelConstants';
+import { CaseStudy } from '../caseStudies/types';
+import { getCaseStudies, getCaseStudy } from '../caseStudies/registry';
+import { runCaseStudy, runCaseStudyDomainActions, CaseStudyRunResult, DomainActionCaseResult, DomainActionResult } from '../caseStudies/caseStudyRunner';
+import { buildGroundTruthObservation } from '../caseStudies/caseStudyObservationAdapter';
 
 export type AppRoute =
   | 'overview'
@@ -49,7 +55,18 @@ interface AppContextType {
   scenarios: Scenario[];
   selectedScenario: Scenario;
   loadScenario: (scenarioId: string) => void;
-  dataSourceMode: 'PREDEFINED SCENARIO' | 'REALTIME (UNCONNECTED)';
+  dataSourceMode: 'PREDEFINED SCENARIO' | 'REALTIME (UNCONNECTED)' | 'CASE STUDY / COUNTERFACTUAL';
+
+  // Real-World Case Studies (Phase 3)
+  caseStudies: CaseStudy[];
+  selectedCaseStudyId: string | null;
+  activeCaseStudy: CaseStudy | null;
+  isCaseStudyMode: boolean;
+  selectCaseStudy: (id: string | null) => void;
+  caseStudyResult: CaseStudyRunResult | null;
+  domainActionResult: DomainActionCaseResult | null;
+  futureDomainActions: DomainActionResult[];
+  caseStudyError: string | null;
 
   // Observation & Events
   observation: Observation;
@@ -69,6 +86,7 @@ interface AppContextType {
   // Interventions & Simulation
   simulations: SimulationResult[];
   recommendation: Recommendation;
+  isRecommendationAvailable: boolean;
   isSandboxApplied: boolean;
   applyRecommendationToSandbox: () => void;
   resetSandbox: () => void;
@@ -142,7 +160,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeRoute, setActiveRoute] = useState<AppRoute>('overview');
   const [scenarios] = useState<Scenario[]>(PREDEFINED_SCENARIOS);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('urban-grid-0421');
-  const [dataSourceMode] = useState<'PREDEFINED SCENARIO' | 'REALTIME (UNCONNECTED)'>('PREDEFINED SCENARIO');
+
+  // Real-World Case Studies (Phase 3): selecting one switches the whole
+  // dashboard into counterfactual mode, sourced entirely from
+  // src/caseStudies/registry.ts + caseStudyRunner.ts + domainActions.ts —
+  // never from SensorGenerator and never independently computed here.
+  const [caseStudies] = useState<CaseStudy[]>(() => getCaseStudies());
+  const [selectedCaseStudyId, setSelectedCaseStudyId] = useState<string | null>(null);
+  const isCaseStudyMode = selectedCaseStudyId !== null;
+
+  const dataSourceMode = isCaseStudyMode ? 'CASE STUDY / COUNTERFACTUAL' : 'PREDEFINED SCENARIO';
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('A');
   const [graphViewMode, setGraphViewMode] = useState<'stress' | 'topology'>('stress');
@@ -185,31 +212,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     autoRefreshIntervalSec: 5,
   });
 
-  // Active scenario
-  const selectedScenario = useMemo(() => {
-    return scenarios.find((s) => s.id === selectedScenarioId) ?? scenarios[0];
-  }, [scenarios, selectedScenarioId]);
+  // Active real-world case (null in normal scenario mode)
+  const activeCaseStudy = useMemo(() => {
+    return selectedCaseStudyId ? getCaseStudy(selectedCaseStudyId) ?? null : null;
+  }, [selectedCaseStudyId]);
 
-  // Generate deterministic observation
-  const [observation, setObservation] = useState<Observation>(() => {
+  // Runs the case through the EXISTING, unmodified engine (Phase 1's
+  // runCaseStudy) and the EXISTING domain-action layer (Phase 2's
+  // runCaseStudyDomainActions). Guarded with try/catch and computed as one
+  // pure, side-effect-free value — a case-study computation failure must
+  // surface as a visible error state, never a fake fallback result and
+  // never a crashed dashboard, and never a setState call during render.
+  const [verificationTestCount, setVerificationTestCount] = useState<number>(10);
+
+  const caseStudyComputation = useMemo<{
+    caseStudyResult: CaseStudyRunResult | null;
+    domainActionResult: DomainActionCaseResult | null;
+    error: string | null;
+  }>(() => {
+    if (!activeCaseStudy) return { caseStudyResult: null, domainActionResult: null, error: null };
+    try {
+      return {
+        caseStudyResult: runCaseStudy(activeCaseStudy),
+        domainActionResult: runCaseStudyDomainActions(activeCaseStudy, verificationTestCount),
+        error: null,
+      };
+    } catch (err) {
+      return {
+        caseStudyResult: null,
+        domainActionResult: null,
+        error: err instanceof Error ? err.message : 'Unknown case-study simulation error.',
+      };
+    }
+  }, [activeCaseStudy, verificationTestCount]);
+
+  const { caseStudyResult, domainActionResult, error: caseStudyError } = caseStudyComputation;
+
+  const futureDomainActions = useMemo<DomainActionResult[]>(() => {
+    return domainActionResult?.futureActions ?? [];
+  }, [domainActionResult]);
+
+  // Active scenario — the selected case's own modelled network when a case
+  // study is active (it IS a plain Scenario, see caseStudies/types.ts), the
+  // predefined scenario otherwise. Every existing page/card reads this via
+  // useApp() unchanged.
+  const selectedScenario = useMemo(() => {
+    if (activeCaseStudy) return activeCaseStudy.network;
+    return scenarios.find((s) => s.id === selectedScenarioId) ?? scenarios[0];
+  }, [activeCaseStudy, scenarios, selectedScenarioId]);
+
+  // Generate observation. In case-study mode this is built SYNCHRONOUSLY
+  // (plain useMemo, directly from the case's own ground truth via
+  // buildGroundTruthObservation — SensorGenerator is never called for the
+  // case-study path) so it can never lag one render behind `selectedScenario`
+  // switching to a differently-shaped network. Scenario mode keeps the
+  // original useState+useEffect pattern (needed so refreshObservation() can
+  // manually re-randomize SensorGenerator's noise/dropout on demand).
+  const groundTruthObservation = useMemo(() => {
+    return isCaseStudyMode ? buildGroundTruthObservation(selectedScenario) : null;
+  }, [isCaseStudyMode, selectedScenario]);
+
+  const [sensorObservation, setSensorObservation] = useState<Observation>(() => {
     return SensorGenerator.generateObservation(selectedScenario, settings.sensorConfig);
   });
 
-  // Update observation on scenario or sensor setting change
+  // Update the SensorGenerator-backed observation on scenario or sensor
+  // setting change — skipped entirely while in case-study mode, since
+  // groundTruthObservation above already covers that case synchronously.
   useEffect(() => {
+    if (isCaseStudyMode) return;
     const obs = SensorGenerator.generateObservation(selectedScenario, settings.sensorConfig);
-    setObservation(obs);
+    setSensorObservation(obs);
     setIsSandboxApplied(false);
     setLastUpdated(new Date().toLocaleTimeString('en-US', { hour12: false }));
-  }, [selectedScenario, settings.sensorConfig]);
+  }, [selectedScenario, settings.sensorConfig, isCaseStudyMode]);
+
+  const observation = groundTruthObservation ?? sensorObservation;
 
   const refreshObservation = useCallback(() => {
+    if (isCaseStudyMode) {
+      // groundTruthObservation is already synchronous/current; just bump the clock.
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+      setLastUpdated(now);
+      setSimulationTime(now);
+      return;
+    }
     const obs = SensorGenerator.generateObservation(selectedScenario, settings.sensorConfig);
-    setObservation(obs);
+    setSensorObservation(obs);
     const now = new Date().toLocaleTimeString('en-US', { hour12: false });
     setLastUpdated(now);
     setSimulationTime(now);
-  }, [selectedScenario, settings.sensorConfig]);
+  }, [selectedScenario, settings.sensorConfig, isCaseStudyMode]);
 
   // Active initial event
   const activeEvent = selectedScenario.initialEvent;
@@ -220,24 +313,114 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return selectedScenario.nodes.find((n) => n.id === selectedNodeId) ?? null;
   }, [selectedScenario, selectedNodeId]);
 
-  // Compute Risk Scores
+  // Compute Risk Scores — same existing RiskCalculator call either way;
+  // `observation`/`selectedScenario` above already carry case-study ground
+  // truth when active, so this needs no branching of its own.
   const riskScores = useMemo(() => {
     return RiskCalculator.calculateRiskScores(observation, selectedScenario, settings.weights);
   }, [observation, selectedScenario, settings.weights]);
 
-  // Simulate Candidate Interventions
-  const simulations = useMemo(() => {
+  // Simulate Candidate Interventions. In case-study mode these are the
+  // domain's SUPPORTED_BY_CURRENT_ENGINE actions (already real,
+  // engine-computed SimulationResults from runCaseStudyDomainActions) with
+  // their `.title` relabeled to the domain-specific action name for
+  // display — every other field is untouched, DERIVED engine output.
+  // Nothing here calculates a result; it only picks which already-computed
+  // results to show and what to call them.
+  const scenarioSimulations = useMemo(() => {
     return InterventionEngine.simulateAll(selectedScenario, observation);
   }, [selectedScenario, observation]);
 
-  // Recommend Optimal Action
-  const recommendation = useMemo(() => {
-    return RecommendationEngine.evaluate(simulations, selectedScenario);
-  }, [simulations, selectedScenario]);
+  const simulations = useMemo(() => {
+    if (!isCaseStudyMode) return scenarioSimulations;
+    return (domainActionResult?.supportedActions ?? []).map((r) => ({
+      ...r.simulation!,
+      title: r.action.name,
+    }));
+  }, [isCaseStudyMode, scenarioSimulations, domainActionResult]);
 
-  // Initial Verification Result
+  const NO_RECOMMENDATION_SENTINEL = useMemo(
+    () => ({
+      actionId: 'none',
+      actionType: 'reroute' as const,
+      title: 'No Simulated Action Available',
+      reason: 'No domain action declared for this case is SUPPORTED_BY_CURRENT_ENGINE.',
+      disruptionScore: 0,
+      containmentPercentage: 0,
+      populationImpact: 0,
+      criticalFacilityImpact: 0,
+      confidencePercentage: 0,
+      effectiveAlternatives: [],
+      rejectedAlternatives: [],
+      explanationSummary:
+        'CASCADE did not recommend an action because none of this case\'s declared domain actions are ' +
+        'currently backed by the simplified engine — see the Future Domain-Solver Actions below.',
+      auditTrail: {
+        scenarioId: selectedScenario.id,
+        evaluatedAt: new Date().toLocaleTimeString(),
+        evaluatedActionsCount: 0,
+        decisionRule: 'NO_SIMULATED_ACTION_AVAILABLE',
+      },
+    }),
+    [selectedScenario.id]
+  );
+
+  const scenarioRecommendation = useMemo(() => {
+    return RecommendationEngine.evaluate(scenarioSimulations, selectedScenario);
+  }, [scenarioSimulations, selectedScenario]);
+
+  const recommendation = useMemo(() => {
+    if (!isCaseStudyMode) return scenarioRecommendation;
+    const rec = domainActionResult?.recommendation;
+    if (rec && rec.status === 'RECOMMENDED') {
+      // The underlying RecommendationEngine text (reason/explanationSummary)
+      // is real, DERIVED output — left untouched except for one honest,
+      // mechanical substitution: every supported action's generic engine
+      // label (e.g. "Reroute Load") is swapped for its domain-specific name
+      // (e.g. "Transfer Critical Load") wherever it appears, so the prose
+      // matches the title above it instead of naming a different mechanism.
+      let reason = rec.recommendation.reason;
+      let explanationSummary = rec.recommendation.explanationSummary;
+      for (const r of domainActionResult?.supportedActions ?? []) {
+        const generic = r.simulation!.title;
+        const domainName = r.action.name;
+        if (!generic || generic === domainName) continue;
+        reason = reason.split(generic).join(domainName).split(generic.toUpperCase()).join(domainName.toUpperCase());
+        explanationSummary = explanationSummary
+          .split(generic)
+          .join(domainName)
+          .split(generic.toUpperCase())
+          .join(domainName.toUpperCase());
+      }
+      return { ...rec.recommendation, title: rec.chosenAction.name, reason, explanationSummary };
+    }
+    return NO_RECOMMENDATION_SENTINEL;
+  }, [isCaseStudyMode, scenarioRecommendation, domainActionResult, NO_RECOMMENDATION_SENTINEL]);
+
+  const isRecommendationAvailable = !isCaseStudyMode || domainActionResult?.recommendation.status === 'RECOMMENDED';
+
+  const PENDING_VERIFICATION_SENTINEL = useMemo<VerificationResult>(
+    () => ({
+      status: 'PENDING',
+      independentPerturbation: { eventType: 'N/A', targetNodeId: 'N/A', targetNodeName: 'N/A', magnitude: 0, seed: 0 },
+      postFixContainment: 'not contained',
+      reCascadeRate: '0 / 0 (0%)',
+      reCascadePercentage: 0,
+      testsConducted: 0,
+      testsPassed: 0,
+      affectedNodesCount: 0,
+      populationImpact: 0,
+      criticalFacilities: 0,
+      details: 'No supported action was simulated for this case, so no post-fix state exists to verify.',
+      timestamp: new Date().toLocaleTimeString(),
+    }),
+    []
+  );
+
+  // Initial Verification Result (scenario mode only — case-study mode's
+  // verification is DERIVED directly from domainActionResult, see below).
   const [verificationResult, setVerificationResult] = useState<VerificationResult>(() => {
-    const defaultSim = simulations[0] ?? {
+    const defaultSim = scenarioSimulations[0] ?? {
       actionId: 'act-reroute',
       actionType: 'reroute',
       title: 'Reroute Load',
@@ -253,17 +436,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       propagationPath: ['A', 'B', 'C'],
       details: { downtimeHours: 0.5, spareCapacityUsed: 26, overflowProduced: 0, rationale: '' },
     };
-    return VerificationEngine.runVerification(recommendation, defaultSim, selectedScenario, 10);
+    return VerificationEngine.runVerification(scenarioRecommendation, defaultSim, selectedScenario, 10);
   });
 
-  // Re-run verification when recommendation or scenario changes
+  const activeVerificationResult = useMemo(() => {
+    if (!isCaseStudyMode) return verificationResult;
+    const rec = domainActionResult?.recommendation;
+    return rec && rec.status === 'RECOMMENDED' ? rec.verification : PENDING_VERIFICATION_SENTINEL;
+  }, [isCaseStudyMode, verificationResult, domainActionResult, PENDING_VERIFICATION_SENTINEL]);
+
+  // Re-run verification. In case-study mode this updates the test-run count
+  // that `runCaseStudyDomainActions` (via domainActionResult above) already
+  // re-derives verification from — never a separately invented result.
   const runVerification = useCallback(
     (runsCount = settings.verificationRuns) => {
       setIsVerifying(true);
+      if (isCaseStudyMode) {
+        setVerificationTestCount(runsCount);
+        setIsVerifying(false);
+        setLastUpdated(new Date().toLocaleTimeString('en-US', { hour12: false }));
+        return;
+      }
       const chosenSim =
-        simulations.find((s) => s.actionId === recommendation.actionId) ?? simulations[0];
+        scenarioSimulations.find((s) => s.actionId === scenarioRecommendation.actionId) ?? scenarioSimulations[0];
       const result = VerificationEngine.runVerification(
-        recommendation,
+        scenarioRecommendation,
         chosenSim,
         selectedScenario,
         runsCount
@@ -272,13 +469,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsVerifying(false);
       setLastUpdated(new Date().toLocaleTimeString('en-US', { hour12: false }));
     },
-    [recommendation, simulations, selectedScenario, settings.verificationRuns]
+    [isCaseStudyMode, scenarioRecommendation, scenarioSimulations, selectedScenario, settings.verificationRuns]
   );
 
-  // Compute Counterfactual Impact Summary
+  // Compute Counterfactual Impact Summary. In case-study mode the
+  // "unmitigated" baseline is the REAL, engine-computed baseline
+  // (computeBaselineCascade, via caseStudyResult) rather than a fixed stub —
+  // still routed through the existing, unmodified ImpactCalculator.
   const impactSummary = useMemo(() => {
+    if (isCaseStudyMode) {
+      if (!caseStudyResult || !isRecommendationAvailable) return { metrics: [] };
+      const baseline = caseStudyResult.cascadeCounterfactual.baseline;
+      const downtimeHours = baseline.affectedNodeCount * HOURS_TO_RESTORE_FAILED_NODE;
+      const baselineDisruption = calculateDisruptionScore(
+        baseline.affectedPopulation,
+        downtimeHours,
+        baseline.affectedCriticalFacilities
+      ).totalDisruptionScore;
+      const chosenSim = simulations.find((s) => s.actionId === recommendation.actionId) ?? simulations[0];
+      if (!chosenSim) return { metrics: [] };
+      return ImpactCalculator.calculateImpact(
+        {
+          affectedNodes: baseline.affectedNodeCount,
+          population: baseline.affectedPopulation,
+          critical: baseline.affectedCriticalFacilities,
+          disruption: baselineDisruption,
+        },
+        chosenSim
+      );
+    }
     const chosenSim =
-      simulations.find((s) => s.actionId === recommendation.actionId) ?? simulations[0];
+      scenarioSimulations.find((s) => s.actionId === scenarioRecommendation.actionId) ?? scenarioSimulations[0];
     const unmitigated = {
       affectedNodes: 7,
       population: 3200,
@@ -286,7 +507,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       disruption: 98,
     };
     return ImpactCalculator.calculateImpact(unmitigated, chosenSim);
-  }, [simulations, recommendation]);
+  }, [isCaseStudyMode, caseStudyResult, isRecommendationAvailable, simulations, recommendation, scenarioSimulations, scenarioRecommendation]);
 
   // Benchmark Engine State
   const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkResult>(() =>
@@ -313,6 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const loadScenario = useCallback((id: string) => {
+    setSelectedCaseStudyId(null);
     setSelectedScenarioId(id);
     setSelectedNodeId('A');
     setIsSandboxApplied(false);
@@ -320,6 +542,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastUpdated(now);
     setSimulationTime(now);
   }, []);
+
+  // Select a real-world case study (or pass null to return to predefined-
+  // scenario mode). Resets the selected node to the case's own initiating
+  // contingency node so the network/risk views focus on something real for
+  // this case, mirroring loadScenario's own reset-to-'A' behavior.
+  const selectCaseStudy = useCallback(
+    (id: string | null) => {
+      setSelectedCaseStudyId(id);
+      setVerificationTestCount(10);
+      if (id) {
+        const cs = getCaseStudy(id);
+        setSelectedNodeId(cs?.initiatingContingency.nodeId ?? null);
+      } else {
+        setSelectedNodeId('A');
+      }
+      setIsSandboxApplied(false);
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+      setLastUpdated(now);
+      setSimulationTime(now);
+    },
+    []
+  );
 
   const updateSettings = useCallback((newSettings: Partial<EngineSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
@@ -350,6 +594,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedScenario,
         loadScenario,
         dataSourceMode,
+        caseStudies,
+        selectedCaseStudyId,
+        activeCaseStudy,
+        isCaseStudyMode,
+        selectCaseStudy,
+        caseStudyResult,
+        domainActionResult,
+        futureDomainActions,
+        caseStudyError,
         observation,
         activeEvent,
         refreshObservation,
@@ -361,10 +614,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         riskScores,
         simulations,
         recommendation,
+        isRecommendationAvailable,
         isSandboxApplied,
         applyRecommendationToSandbox,
         resetSandbox,
-        verificationResult,
+        verificationResult: activeVerificationResult,
         runVerification,
         isVerifying,
         impactSummary,

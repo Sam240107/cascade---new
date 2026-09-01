@@ -6,11 +6,13 @@ import { Compass, CheckCircle2, XCircle, Play, ShieldAlert, Sparkles, FileText }
 export const RecommendationPage: React.FC = () => {
   const {
     recommendation,
+    isRecommendationAvailable,
     simulations,
     applyRecommendationToSandbox,
     isSandboxApplied,
     selectedScenario,
     setActiveRoute,
+    isCaseStudyMode,
   } = useApp();
 
   const [naturalLanguageSummary, setNaturalLanguageSummary] = useState<string | null>(null);
@@ -34,6 +36,13 @@ export const RecommendationPage: React.FC = () => {
       <SubHeader title="Recommended Action & Audit Trail" subtitle="Deterministic decision justification & auditability" />
 
       <div className="p-6 space-y-6 max-w-[1600px] mx-auto w-full">
+        {isCaseStudyMode && !isRecommendationAvailable && (
+          <div className="p-5 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-semibold flex items-center gap-2">
+            <ShieldAlert size={16} />
+            <span>NO_SIMULATED_ACTION_AVAILABLE — no domain action for this case is currently backed by the simplified engine.</span>
+          </div>
+        )}
+
         {/* Main Recommendation Hero Banner */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4">

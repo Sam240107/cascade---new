@@ -131,8 +131,19 @@ export interface CaseStudy {
   /** Which of the engine's generic intervention types (reroute/isolate/
    * crew) are meaningful to evaluate for this case. The engine itself is
    * unchanged — this list only filters which of the three candidate
-   * actions `getCandidateActions()` produces get run for this case. */
+   * actions `getCandidateActions()` produces get run for this case.
+   * Retained from Phase 1 for backward compatibility with `runCaseStudy()`;
+   * Phase 2's richer domain-action layer (`domainActionIds` below) is the
+   * preferred way to declare a case's available interventions going forward. */
   availableInterventions: InterventionType[];
+
+  /**
+   * ids into `domainActions.ts`'s `DOMAIN_ACTIONS` registry — the
+   * domain-specific action set this case declares as relevant to it. All
+   * ids must belong to actions whose `domain` matches this case's own
+   * `domain`. See `runCaseStudyDomainActions()` in `caseStudyRunner.ts`.
+   */
+  domainActionIds: string[];
 
   /** Open questions this case is meant to explore via CASCADE's counterfactual. */
   counterfactualQuestions: string[];

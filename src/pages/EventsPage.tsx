@@ -4,39 +4,46 @@ import { SubHeader } from '../components/layout/SubHeader';
 import { Target, AlertTriangle, ShieldCheck, Activity, Clock, Zap } from 'lucide-react';
 
 export const EventsPage: React.FC = () => {
-  const { observation, selectedScenario, setSelectedNodeId } = useApp();
+  const { observation, selectedScenario, setSelectedNodeId, isCaseStudyMode } = useApp();
 
-  const events = [
-    ...observation.events,
-    {
-      id: 'evt-corr-2',
-      name: 'Secondary Thermal Elevation on Feeder B-E',
-      type: 'Cascading Overload' as const,
-      nodeId: 'B',
-      nodeName: 'Substation B',
-      severity: 'Moderate' as const,
-      detectedAt: '12:24:02 PM',
-      confidence: 0.79,
-      currentObservedValue: 72,
-      normalRange: [40, 60] as [number, number],
-      deltaPercentage: 18,
-      history: [],
-    },
-    {
-      id: 'evt-corr-3',
-      name: 'Reactive Power Deviation at Branch C-D',
-      type: 'Line Sag' as const,
-      nodeId: 'C',
-      nodeName: 'Substation C',
-      severity: 'Low' as const,
-      detectedAt: '12:24:18 PM',
-      confidence: 0.84,
-      currentObservedValue: 74,
-      normalRange: [45, 65] as [number, number],
-      deltaPercentage: 12,
-      history: [],
-    },
-  ];
+  // These two illustrative correlated events are specific to the Urban Grid
+  // demo scenario (nodes 'B'/'C') and are not real/modelled data — they must
+  // not appear when a real-world case study (a different network entirely)
+  // is active, or the page would display fabricated events for nodes that
+  // don't exist in that case's modelled network.
+  const events = isCaseStudyMode
+    ? [...observation.events]
+    : [
+        ...observation.events,
+        {
+          id: 'evt-corr-2',
+          name: 'Secondary Thermal Elevation on Feeder B-E',
+          type: 'Cascading Overload' as const,
+          nodeId: 'B',
+          nodeName: 'Substation B',
+          severity: 'Moderate' as const,
+          detectedAt: '12:24:02 PM',
+          confidence: 0.79,
+          currentObservedValue: 72,
+          normalRange: [40, 60] as [number, number],
+          deltaPercentage: 18,
+          history: [],
+        },
+        {
+          id: 'evt-corr-3',
+          name: 'Reactive Power Deviation at Branch C-D',
+          type: 'Line Sag' as const,
+          nodeId: 'C',
+          nodeName: 'Substation C',
+          severity: 'Low' as const,
+          detectedAt: '12:24:18 PM',
+          confidence: 0.84,
+          currentObservedValue: 74,
+          normalRange: [45, 65] as [number, number],
+          deltaPercentage: 12,
+          history: [],
+        },
+      ];
 
   return (
     <div className="flex flex-col min-h-full pb-8">
@@ -100,7 +107,11 @@ export const EventsPage: React.FC = () => {
                       </button>
                     </td>
                     <td className="py-3 px-3 text-slate-600">{evt.type}</td>
-                    <td className="py-3 px-3 font-mono font-bold text-slate-800">{evt.currentObservedValue}% (Δ +{evt.deltaPercentage}%)</td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                      {isCaseStudyMode
+                        ? `${evt.currentObservedValue} MW`
+                        : `${evt.currentObservedValue}% (Δ +${evt.deltaPercentage}%)`}
+                    </td>
                     <td className="py-3 px-3">
                       <span
                         className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${

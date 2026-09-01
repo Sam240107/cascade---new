@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test src/simulation/__tests__/*.test.ts src/caseStudies/__tests__/*.test.ts",
     "acceptance-test": "tsx src/simulation/acceptanceTest.ts",
-    "case-study-acceptance": "tsx src/caseStudies/acceptanceTest.ts"
+    "case-study-acceptance": "tsx src/caseStudies/acceptanceTest.ts",
+    "domain-action-acceptance": "tsx src/caseStudies/domainActionAcceptanceTest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

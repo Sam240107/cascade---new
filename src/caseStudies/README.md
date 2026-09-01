@@ -71,6 +71,30 @@ into the same `SimEnvironment` of `SimNode`/`SimEdge` the propagation engine
 always operates on. No propagation, intervention, recommendation, or
 verification logic is reimplemented anywhere in this directory.
 
+## Domain-aware actions (Phase 2)
+
+CASCADE uses a common propagation engine across domains. Domain adapters
+(`domainActions.ts`) define which corrective actions make sense for a given
+domain — a flat, data-driven table (`DOMAIN_ACTIONS`), not `if (domain ===
+...)` branching, so a new domain is added by pushing new entries, never by
+editing the engine or the runner. Actions that the current simplified engine
+can represent are simulated (`engineSupport: 'SUPPORTED_BY_CURRENT_ENGINE'`)
+by picking the matching candidate out of the same, unmodified
+`InterventionEngine.getCandidateActions()` list every other case uses.
+Actions requiring a real domain solver (`'REQUIRES_DOMAIN_SOLVER'`) are
+explicitly marked as future capabilities — they are named, documented, and
+carried through the result, but never simulated and never recommended,
+because a `SimulationResult` structurally never exists for them.
+
+**CASCADE is decision support, not direct infrastructure control.** Nothing
+in this layer claims to operate a real utility grid, hospital electrical
+system, or data-center facility — every "supported" action is a
+decision-support counterfactual computed against a MODELLED network, and
+every "future" action is explicitly labeled as not yet backed by a real
+solver rather than faked. See `runCaseStudyDomainActions()` /
+`runDomainActions()` in `caseStudyRunner.ts` and
+`npm run domain-action-acceptance`.
+
 ## Files
 
 - `types.ts` — `CaseStudy`, `EvidenceSource`, `ClassifiedStatement`, `DataClassification`, extensible `CaseStudyDomain`.
@@ -79,6 +103,9 @@ verification logic is reimplemented anywhere in this directory.
 - `tamilNaduGrid.ts`, `chennaiHospital.ts`, `dataCenterUPS.ts` — the three case studies.
 - `__tests__/caseStudies.test.ts` — loading, domain validity, evidence, VERIFIED/MODELLED separation, valid environment, non-mutation, no fake sensor data, DERIVED counterfactual labeling.
 - `acceptanceTest.ts` — `npm run case-study-acceptance`; prints all three cases end-to-end.
+- `domainActions.ts` — `DomainAction`, `EngineSupport`, the 15 domain-specific action definitions, `getDomainActions(domain)`.
+- `__tests__/domainActions.test.ts` — domain action-set isolation, simulated-vs-future honesty, recommendation integrity, non-mutation, and a synthetic future-domain extensibility proof.
+- `domainActionAcceptanceTest.ts` — `npm run domain-action-acceptance`; prints the CASCADE DOMAIN ACTION AUDIT for all three cases.
 
 ## Reroute-realism fix (Phase 1.1)
 

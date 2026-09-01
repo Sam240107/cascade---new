@@ -484,6 +484,16 @@ export const NetworkCard: React.FC = () => {
             const isUpstream = activeFocusMetrics?.upstream.includes(node.id);
             const isDownstream = activeFocusMetrics?.downstream.includes(node.id);
 
+            // The circle badge was sized for Urban Grid's single-letter ids
+            // (e.g. "A"). Case-study node ids are longer, hyphenated
+            // strings (e.g. "wind-cluster") that would otherwise overflow
+            // the 16px-radius circle and overlap neighboring nodes. Short
+            // ids render exactly as before; longer ones get a compact
+            // 3-letter badge at a smaller size — the full id/name is still
+            // shown in the label underneath and in the footer inspector.
+            const idBadgeText = node.id.length > 4 ? node.id.slice(0, 3).toUpperCase() : node.id;
+            const idBadgeFontSize = node.id.length > 4 ? 10 : 13;
+
             return (
               <g
                 key={node.id}
@@ -554,16 +564,17 @@ export const NetworkCard: React.FC = () => {
                   className="shadow-md"
                 />
 
-                {/* Node Identifier Letter */}
+                {/* Node Identifier Badge (short id, or a 3-letter
+                    abbreviation for longer case-study ids — see idBadgeText) */}
                 <text
                   textAnchor="middle"
                   dy="5"
                   fill={graphViewMode === 'stress' ? stressColors.text : topStyle.text}
-                  fontSize="13"
+                  fontSize={idBadgeFontSize}
                   fontWeight="900"
                   className="pointer-events-none font-sans"
                 >
-                  {node.id}
+                  {idBadgeText}
                 </text>
 
                 {/* Mini Type Icon Badge */}
@@ -657,7 +668,7 @@ export const NetworkCard: React.FC = () => {
                   <span>{activeFocusNode.type.replace('_', ' ').toUpperCase()}</span>
                   <span>•</span>
                   <span>Stress: {Math.round(activeFocusNode.stress * 100)}%</span>
-                  {activeFocusNode.isCriticalFacility && (
+                  {activeFocusNode.critical && (
                     <span className="px-1.5 py-0.2 rounded-sm bg-red-500 text-white text-[8px] font-black">
                       CRITICAL
                     </span>
@@ -692,11 +703,11 @@ export const NetworkCard: React.FC = () => {
               <div className="flex items-center gap-4 text-[10px]">
                 <div>
                   <span className="opacity-60 block text-[9px]">Current Load</span>
-                  <span className="font-bold">{activeFocusNode.observedLoadMw} MW</span>
+                  <span className="font-bold">{Math.round(activeFocusNode.observedLoad)} MW</span>
                 </div>
                 <div>
                   <span className="opacity-60 block text-[9px]">Nominal Capacity</span>
-                  <span className="font-bold">{activeFocusNode.capacityMw} MW</span>
+                  <span className="font-bold">{Math.round(activeFocusNode.observedCapacity)} MW</span>
                 </div>
                 <div>
                   <span className="opacity-60 block text-[9px]">Status</span>

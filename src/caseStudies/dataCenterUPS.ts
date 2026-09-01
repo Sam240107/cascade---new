@@ -232,6 +232,12 @@ export const dataCenterUpsCase: CaseStudy = {
     classification: 'MODELLED',
   },
   availableInterventions: ['reroute', 'isolate', 'crew'],
+  // Phase 2: the domain's full 5-action set (see domainActions.ts). Of
+  // these, ups-transfer, generator-takeover, and redundant-path-restoration
+  // are SUPPORTED_BY_CURRENT_ENGINE (mapped to the existing reroute/isolate/
+  // crew mechanisms respectively); load-shedding and workload-migration are
+  // REQUIRES_DOMAIN_SOLVER.
+  domainActionIds: ['ups-transfer', 'load-shedding', 'workload-migration', 'generator-takeover', 'redundant-path-restoration'],
   counterfactualQuestions: [
     'If the primary UPS\'s load is proactively rerouted across both the backup UPS and generator paths before failure, does the backup-UPS overload get contained?',
     'Does isolating the faulted primary UPS prevent the overload from reaching the backup UPS and critical IT load, and at what cost?',

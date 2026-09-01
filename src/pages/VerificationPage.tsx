@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { SubHeader } from '../components/layout/SubHeader';
+import { getVerificationVerdict } from '../caseStudies/verificationVerdict';
 import { ShieldCheck, ShieldAlert, Play, RefreshCw, Zap, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export const VerificationPage: React.FC = () => {
@@ -14,18 +15,7 @@ export const VerificationPage: React.FC = () => {
 
   const [testCount, setTestCount] = useState<number>(10);
   const isPassed = verificationResult.status === 'PASSED';
-
-  // Plain-English resilience verdict, derived entirely from the engine's own
-  // already-computed status/testsPassed/testsConducted — never a separate
-  // threshold calculation, so it can never contradict verificationResult.status.
-  const hasTrials = verificationResult.status !== 'PENDING' && verificationResult.testsConducted > 0;
-  const shockVerdict = !hasTrials
-    ? null
-    : verificationResult.status === 'PASSED'
-    ? { label: 'ROBUST', tone: 'emerald' as const }
-    : verificationResult.testsPassed === 0
-    ? { label: 'HIGH RESIDUAL VULNERABILITY', tone: 'rose' as const }
-    : { label: 'PARTIALLY ROBUST', tone: 'amber' as const };
+  const shockVerdict = getVerificationVerdict(verificationResult);
 
   return (
     <div className="flex flex-col min-h-full pb-8">
