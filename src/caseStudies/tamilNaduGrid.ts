@@ -163,9 +163,8 @@ export const tamilNaduPowerGridCase: CaseStudy = {
     'corridor is reported to cause 230kV network overloading/load shedding across Chennai, Arasur, Trichy, ' +
     'Madurai, Karaikudi, Neyveli and Hosur, and documented renewable-generation curtailment/tripping events ' +
     '(750 MW on 23 Aug 2025; 3900 MW on 24 Sep 2025). TANTRANSCO reportedly proposed a Special Protection ' +
-    'Scheme (SPS) pending a second circuit. NOTE: these facts could not be independently confirmed by a ' +
-    'direct read of the source documents this session — see "Sourcing status" in the file header and ' +
-    '`verifiedFacts` classifications below.',
+    'Scheme (SPS) pending a second circuit. Source status: Some incident details are based on secondary ' +
+    'extraction and have not been independently verified from the original source document.',
 
   expectedObservedMechanism:
     'A single 400kV circuit carries corridor-scale wind generation at/near its rated loading. When it ' +
@@ -265,6 +264,12 @@ export const tamilNaduPowerGridCase: CaseStudy = {
   // (SPS, alternate switching), not a physical repair crew — 'crew' is
   // intentionally excluded from this case.
   availableInterventions: ['reroute', 'isolate'],
+  // Phase 2: the domain's full 5-action set (see domainActions.ts). Of
+  // these, only network-reconfiguration, renewable-curtailment, and
+  // restoration are SUPPORTED_BY_CURRENT_ENGINE (mapped to the existing
+  // reroute/isolate/crew mechanisms respectively); generation-redispatch
+  // and controlled-load-shedding are REQUIRES_DOMAIN_SOLVER.
+  domainActionIds: ['network-reconfiguration', 'generation-redispatch', 'renewable-curtailment', 'controlled-load-shedding', 'restoration'],
   counterfactualQuestions: [
     'If load on the Kanarpatti 400kV corridor is proactively rerouted before its threshold is crossed, does the downstream 230kV overload get contained?',
     'Does isolating the Kanarpatti node prevent cascading tripping across the seven downstream 230kV areas, and at what population/service cost?',

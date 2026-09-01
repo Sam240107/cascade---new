@@ -15,6 +15,18 @@ export const VerificationPage: React.FC = () => {
   const [testCount, setTestCount] = useState<number>(10);
   const isPassed = verificationResult.status === 'PASSED';
 
+  // Plain-English resilience verdict, derived entirely from the engine's own
+  // already-computed status/testsPassed/testsConducted — never a separate
+  // threshold calculation, so it can never contradict verificationResult.status.
+  const hasTrials = verificationResult.status !== 'PENDING' && verificationResult.testsConducted > 0;
+  const shockVerdict = !hasTrials
+    ? null
+    : verificationResult.status === 'PASSED'
+    ? { label: 'ROBUST', tone: 'emerald' as const }
+    : verificationResult.testsPassed === 0
+    ? { label: 'HIGH RESIDUAL VULNERABILITY', tone: 'rose' as const }
+    : { label: 'PARTIALLY ROBUST', tone: 'amber' as const };
+
   return (
     <div className="flex flex-col min-h-full pb-8">
       <SubHeader title="Verification & Independent Perturbation Testing" subtitle="Don't execute a fix blind. Simulate it first — then prove it held." />
@@ -54,6 +66,19 @@ export const VerificationPage: React.FC = () => {
               <p className="text-xs text-slate-750 font-medium mt-1">
                 {verificationResult.details}
               </p>
+              {shockVerdict && (
+                <p
+                  className={`text-xs font-bold mt-1.5 ${
+                    shockVerdict.tone === 'emerald'
+                      ? 'text-emerald-700'
+                      : shockVerdict.tone === 'amber'
+                      ? 'text-amber-700'
+                      : 'text-rose-700'
+                  }`}
+                >
+                  {verificationResult.testsPassed}/{verificationResult.testsConducted} independent shocks contained — {shockVerdict.label}
+                </p>
+              )}
             </div>
           </div>
 
@@ -140,21 +165,39 @@ export const VerificationPage: React.FC = () => {
               <div className="text-2xl font-extrabold text-slate-900 mt-1">{verificationResult.reCascadeRate}</div>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Post-Fix Containment</div>
-              <div className="text-xl font-bold text-emerald-700 mt-1 capitalize">{verificationResult.postFixContainment}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Post-Fix Containment (1st Trial)</div>
+              <div
+                className={`text-xl font-bold mt-1 capitalize ${
+                  verificationResult.postFixContainment === 'contained' ? 'text-emerald-700' : 'text-rose-700'
+                }`}
+              >
+                {verificationResult.postFixContainment}
+              </div>
             </div>
           </div>
+          <p className="text-[11px] text-slate-400 -mt-3 mb-4">
+            Post-Fix Containment reflects only the first independent trial; the {verificationResult.testsPassed}/
+            {verificationResult.testsConducted} figure below is the aggregate across all independent trials — the
+            two can legitimately differ.
+          </p>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            {Array.from({ length: verificationResult.testsConducted }).map((_, i) => (
-              <div
-                key={i}
-                className="w-7 h-7 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-[10px] flex items-center justify-center"
-                title={`Trial #${i + 1}: Passed (Contained)`}
-              >
-                ✓
-              </div>
-            ))}
+            {Array.from({ length: verificationResult.testsConducted }).map((_, i) => {
+              const trialPassed = i < verificationResult.testsPassed;
+              return (
+                <div
+                  key={i}
+                  className={`w-7 h-7 rounded-lg border font-bold text-[10px] flex items-center justify-center ${
+                    trialPassed
+                      ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                      : 'bg-rose-100 border-rose-300 text-rose-800'
+                  }`}
+                  title={trialPassed ? `Trial #${i + 1}: Passed (Contained)` : `Trial #${i + 1}: Failed (Not Contained)`}
+                >
+                  {trialPassed ? '✓' : '✕'}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

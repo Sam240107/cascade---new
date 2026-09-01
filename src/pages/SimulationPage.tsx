@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../state/AppContext';
 import { SubHeader } from '../components/layout/SubHeader';
 import { SimulationResult } from '../types/domain';
-import { CheckCircle2, XCircle, Play, ShieldAlert, Layers } from 'lucide-react';
+import { CheckCircle2, XCircle, Play, ShieldAlert, Layers, Lock } from 'lucide-react';
 
 export const SimulationPage: React.FC = () => {
   const {
@@ -12,9 +12,27 @@ export const SimulationPage: React.FC = () => {
     applyRecommendationToSandbox,
     isSandboxApplied,
     setActiveRoute,
+    isCaseStudyMode,
+    futureDomainActions,
+    recommendation,
+    isRecommendationAvailable,
   } = useApp();
 
-  const [selectedActionId, setSelectedActionId] = useState<string>(simulations[0]?.actionId ?? 'act-reroute');
+  // In case-study mode, default (and re-default on case switch) to the
+  // actually recommended action rather than whichever candidate happens to
+  // load first — candidate ordering/recommendation logic is untouched, this
+  // only changes which tab is pre-selected when the page is viewed.
+  const defaultActionId =
+    isCaseStudyMode && isRecommendationAvailable && recommendation.actionId !== 'none'
+      ? recommendation.actionId
+      : simulations[0]?.actionId ?? 'act-reroute';
+
+  const [selectedActionId, setSelectedActionId] = useState<string>(defaultActionId);
+
+  useEffect(() => {
+    setSelectedActionId(defaultActionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCaseStudyMode, isRecommendationAvailable, recommendation.actionId]);
 
   const activeSim = simulations.find((s) => s.actionId === selectedActionId) ?? simulations[0];
 
@@ -23,6 +41,14 @@ export const SimulationPage: React.FC = () => {
       <SubHeader title="Intervention Simulation Studio" subtitle="Counterfactual cascade branch evaluation & sandbox modeling" />
 
       <div className="p-6 space-y-6 max-w-[1600px] mx-auto w-full">
+        {/* Empty state: no domain action for this case is currently simulatable */}
+        {isCaseStudyMode && simulations.length === 0 && (
+          <div className="p-5 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-semibold flex items-center gap-2">
+            <ShieldAlert size={16} />
+            <span>No supported action available for this case — see Future Domain-Solver Actions below.</span>
+          </div>
+        )}
+
         {/* Top 3 Candidate Selector Tabs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {simulations.map((sim, index) => {
@@ -63,6 +89,35 @@ export const SimulationPage: React.FC = () => {
             );
           })}
         </div>
+
+        {/* Future / Unsupported Domain Actions — named, never simulated, never recommended */}
+        {isCaseStudyMode && futureDomainActions.length > 0 && (
+          <div>
+            <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Lock size={13} className="text-slate-400" />
+              Future Domain-Solver Actions
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {futureDomainActions.map((r) => (
+                <div
+                  key={r.action.id}
+                  className="p-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 opacity-90"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-sm text-slate-700">{r.action.name}</span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-200 text-slate-600 border border-slate-300">
+                      REQUIRES DOMAIN-SPECIFIC SOLVER
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 line-clamp-2">{r.action.description}</p>
+                  <p className="mt-3 pt-2 border-t border-slate-200 text-[11px] text-slate-500 line-clamp-3">
+                    {r.action.engineSupportNote}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Active Candidate Deep Dive */}
         {activeSim && (
